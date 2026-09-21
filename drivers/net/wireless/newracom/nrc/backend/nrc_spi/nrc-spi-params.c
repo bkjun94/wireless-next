@@ -40,6 +40,12 @@ int spi_gpio_irq = -1;
 module_param(spi_gpio_irq, int, 0600);
 MODULE_PARM_DESC(spi_gpio_irq, "SPI gpio irq");
 
+int spi_reset_gpio = -1;
+module_param(spi_reset_gpio, int, 0600);
+MODULE_PARM_DESC(
+	spi_reset_gpio,
+	"HW reset GPIO number, used only when DT reset-gpios is absent (-1=disabled/soft-reset)");
+
 int spi_polling_interval = 0;
 module_param(spi_polling_interval, int, 0600);
 MODULE_PARM_DESC(spi_polling_interval, "SPI polling interval (msec)");

@@ -71,14 +71,37 @@ MODULE_DEVICE_TABLE(spi, nrc_spi_id);
  */
 static int nrc_cspi_device_hw_reset(struct nrc_spi_priv *priv)
 {
+	bool use_param;
+
 	if (!priv) {
 		ERR_SPI("Invalid priv pointer");
 		return -EINVAL;
 	}
 
-	INFO("Resetting device");
-	nrc_cspi_reset(priv, priv->spi);
+	/* DT reset-gpios takes precedence; param GPIO only if DT is absent. */
+	use_param = (!priv->reset_gpio && priv->reset_gpio_num >= 0);
 
+	/* No DT reset-gpios and no spi_reset_gpio param: soft-reset only. */
+	if (!priv->reset_gpio && !use_param)
+		return 0;
+
+	INFO("Resetting device (%s)", use_param ? "param gpio" : "dt gpio");
+
+	/* Assert (Active Low) */
+	if (use_param)
+		nrc_gpio_set_value(priv->reset_gpio_num, 0);
+	else
+		gpiod_set_value_cansleep(priv->reset_gpio, 1);
+	msleep(10); /* 10ms assert */
+
+	/* Deassert */
+	if (use_param)
+		nrc_gpio_set_value(priv->reset_gpio_num, 1);
+	else
+		gpiod_set_value_cansleep(priv->reset_gpio, 0);
+
+	/* Settle, then poll for the chip to respond (ROM-boot is confirmed
+	 * later in spi_hif_probe()). */
 	msleep(NRC_HW_RESET_SETTLE_MS);
 
 	if (spi_hif_wait_rom_boot(priv->spi, &priv->hw.sys,

@@ -2218,6 +2218,39 @@ void nrc_cspi_reset(struct nrc_spi_priv *priv, struct spi_device *spi)
 	nrc_cspi_sw_reset(spi);
 }
 
+#if defined(ENABLE_HW_RESET)
+/*
+ * Request the HW reset GPIO given by the spi_reset_gpio module param.
+ * Used only when DT reset-gpios is absent; DT always takes precedence.
+ */
+static int nrc_cspi_reset_gpio_param_request(struct nrc_spi_priv *priv)
+{
+	if (!priv || spi_reset_gpio < 0)
+		return 0; /* soft-reset: no param GPIO */
+#if defined(CONFIG_SPI_USE_DT)
+	if (priv->reset_gpio)
+		return 0; /* DT reset-gpios present, param ignored */
+#endif
+	if (IS_ERR(nrc_gpio_request(spi_reset_gpio, "nrc-reset"))) {
+		ERR("gpio_request(nrc-reset param %d) failed", spi_reset_gpio);
+		return -EINVAL;
+	}
+	/* Deasserted (active low): drive high. */
+	nrc_gpio_direction_output(spi_reset_gpio, 1);
+	priv->reset_gpio_num = spi_reset_gpio;
+	INFO("HW reset via module param GPIO %d", spi_reset_gpio);
+	return 0;
+}
+
+static void nrc_cspi_reset_gpio_param_free(struct nrc_spi_priv *priv)
+{
+	if (!priv || priv->reset_gpio_num < 0)
+		return;
+	nrc_gpio_free(priv->reset_gpio_num);
+	priv->reset_gpio_num = -1;
+}
+#endif
+
 int nrc_cspi_gpio_alloc(struct spi_device *spi)
 {
 #if defined(ENABLE_HW_RESET)
@@ -2229,6 +2262,10 @@ int nrc_cspi_gpio_alloc(struct spi_device *spi)
 		ERR("gpio_request(nrc-reset) failed");
 		goto err;
 	}
+
+	/* No DT reset-gpios: fall back to spi_reset_gpio module param. */
+	if (nrc_cspi_reset_gpio_param_request(spi->dev.platform_data) < 0)
+		goto err;
 #else
 	if (nrc_gpio_request(HOST_GPIO_FOR_TARGET_RST, "nrc-reset") < 0) {
 		ERR("gpio_request(nrc-reset) failed");
@@ -2276,6 +2313,8 @@ void nrc_cspi_gpio_free(struct spi_device *spi)
 	nrc_gpio_set_value(HOST_GPIO_FOR_TARGET_RST, 1);
 	nrc_gpio_free(HOST_GPIO_FOR_TARGET_RST);
 #endif
+	/* Release param HW reset GPIO if it was requested. */
+	nrc_cspi_reset_gpio_param_free(spi->dev.platform_data);
 #endif
 
 	/* Power save GPIO cleanup moved to HAL cleanup */
@@ -2315,6 +2354,7 @@ struct nrc_spi_priv *nrc_cspi_alloc(struct spi_device *dev)
 	INIT_DELAYED_WORK(&priv->work, spi_poll_status);
 
 	priv->polling_interval = spi_polling_interval; /* from module param */
+	priv->reset_gpio_num = -1; /* param HW reset GPIO unused by default */
 	priv->power_save_gpio_allocated = false; /* GPIO resource tracking */
 	priv->power_save_gpio_number = -1; /* No GPIO allocated initially */
 
