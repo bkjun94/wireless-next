@@ -329,9 +329,15 @@ int nrc_nw_stop(void)
 		return -EINVAL;
 	}
 
-	/* Prevent redundant stop */
+	/* Prevent a redundant stop of the hardware, but still release whatever
+	 * nrc_hal_fw_init() allocated. A failed hardware probe leaves the state
+	 * at NRC_DRV_INIT with fw.priv live, and returning here without the
+	 * cleanup below leaked that structure on every failed load.
+	 * nrc_hal_fw_cleanup() checks fw.priv itself, so a second call is safe.
+	 */
 	if (NRC_HIF_DRV_STATE(hdev) == NRC_DRV_INIT ||
 	    NRC_HIF_DRV_STATE(hdev) == NRC_DRV_STOP) {
+		nrc_hal_fw_cleanup(hdev);
 		return 0;
 	}
 

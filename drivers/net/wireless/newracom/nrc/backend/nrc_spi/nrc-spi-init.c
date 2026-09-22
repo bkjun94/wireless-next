@@ -64,6 +64,32 @@ static const struct spi_device_id nrc_spi_id[] = {{NRC_DRIVER_NAME, 0}, {}};
 MODULE_DEVICE_TABLE(spi, nrc_spi_id);
 
 /*
+ * struct nrc_spi_priv::reset_gpio only exists on CONFIG_SPI_USE_DT builds, so
+ * every access to it has to be compiled out elsewhere.  Wrap it here once so
+ * the reset path below stays free of preprocessor conditionals.
+ */
+#if defined(CONFIG_SPI_USE_DT)
+static inline bool nrc_dt_reset_present(struct nrc_spi_priv *priv)
+{
+	return priv->reset_gpio != NULL;
+}
+
+static inline void nrc_dt_reset_set(struct nrc_spi_priv *priv, int value)
+{
+	gpiod_set_value_cansleep(priv->reset_gpio, value);
+}
+#else
+static inline bool nrc_dt_reset_present(struct nrc_spi_priv *priv)
+{
+	return false;
+}
+
+static inline void nrc_dt_reset_set(struct nrc_spi_priv *priv, int value)
+{
+}
+#endif
+
+/*
  * Reset the chip once at probe so that it starts ROM boot from a known state.
  * nrc_cspi_reset() picks the hardware line when the board has one and falls
  * back to the soft reset otherwise. Readiness is only sampled here; the real
@@ -79,10 +105,10 @@ static int nrc_cspi_device_hw_reset(struct nrc_spi_priv *priv)
 	}
 
 	/* DT reset-gpios takes precedence; param GPIO only if DT is absent. */
-	use_param = (!priv->reset_gpio && priv->reset_gpio_num >= 0);
+	use_param = (!nrc_dt_reset_present(priv) && priv->reset_gpio_num >= 0);
 
 	/* No DT reset-gpios and no spi_reset_gpio param: soft-reset only. */
-	if (!priv->reset_gpio && !use_param)
+	if (!nrc_dt_reset_present(priv) && !use_param)
 		return 0;
 
 	INFO("Resetting device (%s)", use_param ? "param gpio" : "dt gpio");
@@ -91,14 +117,14 @@ static int nrc_cspi_device_hw_reset(struct nrc_spi_priv *priv)
 	if (use_param)
 		nrc_gpio_set_value(priv->reset_gpio_num, 0);
 	else
-		gpiod_set_value_cansleep(priv->reset_gpio, 1);
+		nrc_dt_reset_set(priv, 1);
 	msleep(10); /* 10ms assert */
 
 	/* Deassert */
 	if (use_param)
 		nrc_gpio_set_value(priv->reset_gpio_num, 1);
 	else
-		gpiod_set_value_cansleep(priv->reset_gpio, 0);
+		nrc_dt_reset_set(priv, 0);
 
 	/* Settle, then poll for the chip to respond (ROM-boot is confirmed
 	 * later in spi_hif_probe()). */

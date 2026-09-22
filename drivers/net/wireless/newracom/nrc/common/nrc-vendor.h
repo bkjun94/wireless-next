@@ -28,14 +28,6 @@
 
 /**
  * GPIO pin number on the host device(ex. Raspberry Pi).
- * This is used to do HW reset of the target.
- * So, the reset pin of the target must be connected to this GPIO physically.
- * [direction]: OUTPUT
- */
-#define HOST_GPIO_FOR_TARGET_RST (4)
-
-/**
- * GPIO pin number on the host device(ex. Raspberry Pi).
  * This is used to wake up the target in deep-sleep.
  * [direction]: OUTPUT
  */
