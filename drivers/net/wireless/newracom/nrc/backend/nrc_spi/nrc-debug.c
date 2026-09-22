@@ -136,20 +136,25 @@ void nrc_spi_init_debugfs(struct spi_device *spi)
 	}
 
 	/* Create SPI module debug mask control */
-	debugfs_create_file("debug_mask", 0664, nrc_spi_debugfs_root, NULL,
+	debugfs_create_file("debug_mask", 0600, nrc_spi_debugfs_root, NULL,
 			    &nrc_spi_debugfs_debug_fops);
 
 	/* Create SPI module debug level control */
-	debugfs_create_file("debug_level", 0664, nrc_spi_debugfs_root, NULL,
+	debugfs_create_file("debug_level", 0600, nrc_spi_debugfs_root, NULL,
 			    &nrc_spi_debugfs_level_fops);
 
 	/* Create CSPI status test */
-	debugfs_create_file("cspi", 0664, nrc_spi_debugfs_root, priv,
+	debugfs_create_file("cspi", 0600, nrc_spi_debugfs_root, priv,
 			    &nrc_spi_debugfs_cspi_fops);
 
-	/* Create device reset control */
-	debugfs_create_file("reset", 0664, nrc_spi_debugfs_root, priv,
+#if defined(DEBUG)
+	/*
+	 * Device reset is a debug/test control, so it is not created in
+	 * production builds.
+	 */
+	debugfs_create_file("reset", 0600, nrc_spi_debugfs_root, priv,
 			    &nrc_spi_debugfs_reset_fops);
+#endif /* DEBUG */
 
 	INFO("SPI debugfs initialized at /sys/kernel/debug/nrc_spi/");
 #endif

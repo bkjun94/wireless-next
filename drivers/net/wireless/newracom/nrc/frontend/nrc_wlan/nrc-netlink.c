@@ -46,6 +46,13 @@
 
 #define NRC_FLAG_NO_NEED_PS 0x1
 
+/*
+ * Operations that exist only for debugging and certification testing are
+ * compiled under DEBUG, together with the helpers they use, so that a
+ * production build does not offer them on the netlink family at all. Both the
+ * handler and its entry in nl_umac_nl_ops[] are guarded.
+ */
+
 static struct nrc *nrc_nw;
 
 #ifdef CONFIG_SUPPORT_NEW_NETLINK
@@ -112,6 +119,7 @@ done:
 	nrc_ps_dyn_start(nw, 0, NRC_PS_REASON_USER_NETLINK_CMD);
 }
 
+#if defined(DEBUG)
 static bool nrc_set_stbc_rx(struct nrc *nw, u8 stream)
 {
 	struct ieee80211_supported_band *sband = NULL;
@@ -130,6 +138,7 @@ static bool nrc_set_stbc_rx(struct nrc *nw, u8 stream)
 
 	return true;
 }
+#endif /* DEBUG */
 
 #define MAX_APF_LEN 2048
 
@@ -316,16 +325,21 @@ static int capi_sta_reply(int id, struct genl_info *info, const char *response)
 	return genlmsg_reply(msg, info);
 }
 
+#if defined(DEBUG)
 static int capi_sta_reply_ok(int id, struct genl_info *info)
 {
 	return capi_sta_reply(id, info, NL_WFA_CAPI_RESP_OK);
 }
+#endif /* DEBUG */
 
+#if defined(DEBUG)
 static int capi_sta_reply_fail(int id, struct genl_info *info)
 {
 	return capi_sta_reply(id, info, NL_WFA_CAPI_RESP_ERR);
 }
+#endif /* DEBUG */
 
+#if defined(DEBUG)
 static int halow_reply(int id, struct genl_info *info, const char *response)
 {
 	struct sk_buff *msg;
@@ -354,6 +368,7 @@ static int halow_reply(int id, struct genl_info *info, const char *response)
 
 	return genlmsg_reply(msg, info);
 }
+#endif /* DEBUG */
 
 /* capi_sta_get_info - return vendor specific information
  *
@@ -361,6 +376,7 @@ static int halow_reply(int id, struct genl_info *info, const char *response)
  *
  * Return: vendor specfic information (can be multiple)
  */
+#if defined(DEBUG)
 static int capi_sta_get_info(struct sk_buff *skb, struct genl_info *info)
 {
 	struct sk_buff *msg;
@@ -397,7 +413,9 @@ static int capi_sta_get_info(struct sk_buff *skb, struct genl_info *info)
 
 	return rc;
 }
+#endif /* DEBUG */
 
+#if defined(DEBUG)
 static int halow_set_dut(struct sk_buff *skb, struct genl_info *info)
 {
 	uint8_t param_name[MAX_HALOW_SIZE] = {
@@ -676,6 +694,7 @@ static int halow_set_dut(struct sk_buff *skb, struct genl_info *info)
 halow_not_supported:
 	return halow_reply(NL_HALOW_SET_DUT, info, NL_HALOW_RESP_NOT_SUPP);
 }
+#endif /* DEBUG */
 
 /* capi_sta_set_11n - set 11n STA settings
  *
@@ -690,6 +709,7 @@ halow_not_supported:
  * Return: "COMPLETE" or "ERROR"
  *
  */
+#if defined(DEBUG)
 static int capi_sta_set_11n(struct sk_buff *skb, struct genl_info *info)
 {
 	uint8_t param_name[MAX_CAPIREQ_SIZE] = {
@@ -891,6 +911,7 @@ static int capi_sta_set_11n(struct sk_buff *skb, struct genl_info *info)
 wfa_not_supported:
 	return capi_sta_reply_fail(NL_WFA_CAPI_STA_SET_11N, info);
 }
+#endif /* DEBUG */
 
 /**
  * Design: find the station vif, and sta corresponding to the
@@ -1090,6 +1111,7 @@ static int capi_sta_send_delba(struct sk_buff *skb, struct genl_info *info)
  *				: info(struct genl_info*)
  * Returns		: int(capi_sta_reply)
  */
+#if defined(DEBUG)
 static int capi_bss_max_idle_offset(struct sk_buff *skb, struct genl_info *info)
 {
 	int32_t bss_max_idle_offset;
@@ -1119,8 +1141,11 @@ static int capi_bss_max_idle_offset(struct sk_buff *skb, struct genl_info *info)
 	return capi_sta_reply(NL_WFA_CAPI_BSS_MAX_IDLE_OFFSET, info,
 			      NL_WFA_CAPI_RESP_NONE);
 }
+#endif /* DEBUG */
 
+#if defined(DEBUG)
 static int s1g_unscaled_interval_max = 0x3fff;
+
 static int convert_usf(int interval)
 {
 	int ui, usf = 0, interval_usf;
@@ -1146,6 +1171,7 @@ static int convert_usf(int interval)
 
 	return interval_usf;
 }
+#endif /* DEBUG */
 
 extern bool no_convert_usf;
 
@@ -1160,6 +1186,7 @@ extern bool no_convert_usf;
  *				: info(struct genl_info*)
  * Returns		: int(capi_sta_reply)
  */
+#if defined(DEBUG)
 static int capi_bss_max_idle(struct sk_buff *skb, struct genl_info *info)
 {
 	int32_t max_idle, vif_id, no_usf_auto_convert;
@@ -1234,7 +1261,9 @@ static int capi_bss_max_idle(struct sk_buff *skb, struct genl_info *info)
 			      vif != NULL ? NL_WFA_CAPI_RESP_NONE :
 					    NL_WFA_CAPI_RESP_ERR);
 }
+#endif /* DEBUG */
 
+#if defined(DEBUG)
 static void generate_mmic_error(void *data, u8 *mac, struct ieee80211_vif *vif)
 {
 	struct capi_data *c = data;
@@ -1326,6 +1355,7 @@ out:
 	if ((!diff) || (diff > NRC_MAC80211_RCU_LOCK_THRESHOLD))
 		DBG_MAC("%s, diff=%lu", __func__, (unsigned long)diff);
 }
+#endif /* DEBUG */
 
 /* test_mmic_failure - Trigger MMIC failture event to cfg80211
  *
@@ -1333,6 +1363,7 @@ out:
  * @ SA	: Source Address,  BSSID will be used if SA is omitted.
  * Return: "Ok" if success, "Fail" if failed
  */
+#if defined(DEBUG)
 static int test_mmic_failure(struct sk_buff *skb, struct genl_info *info)
 {
 	struct capi_data param = {0};
@@ -1360,7 +1391,9 @@ static int test_mmic_failure(struct sk_buff *skb, struct genl_info *info)
 			      param.done ? NL_WFA_CAPI_RESP_NONE :
 					   NL_WFA_CAPI_RESP_ERR);
 }
+#endif /* DEBUG */
 
+#if defined(DEBUG)
 static int nrc_inject_mgmt_frame(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nrc_hif_device *hdev = nrc_nw->hdev;
@@ -1425,7 +1458,9 @@ fail_over:
 
 	return -EIO;
 }
+#endif /* DEBUG */
 
+#if defined(DEBUG)
 static int nrc_shell_run_simple(struct sk_buff *skb, struct genl_info *info)
 {
 	char *cmd = NULL;
@@ -1467,6 +1502,7 @@ static int nrc_shell_run_simple(struct sk_buff *skb, struct genl_info *info)
 
 	return 0;
 }
+#endif /* DEBUG */
 
 enum nrc_shell_run_state { NRC_SHELL_IDLE, NRC_SHELL_RUNNING };
 
@@ -2312,6 +2348,7 @@ static int nl_apf_get_filter(struct sk_buff *skb, struct genl_info *info)
 	return genlmsg_reply(msg, info);
 }
 
+#if defined(DEBUG)
 static int nrc_mic_scan(struct sk_buff *skb, struct genl_info *info)
 {
 	struct sk_buff *msg, *wim_skb, *wim_resp;
@@ -2388,10 +2425,12 @@ static int nrc_mic_scan(struct sk_buff *skb, struct genl_info *info)
 
 	return genlmsg_reply(msg, info);
 }
+#endif /* DEBUG */
 
 /* Shortest legal 802.11 frame (ACK/CTS): frame control + duration + RA */
 #define NRC_MIN_80211_FRAME_LEN 10
 
+#if defined(DEBUG)
 static int nrc_inject_frame(struct sk_buff *skb, struct genl_info *info)
 {
 	struct sk_buff *buffer;
@@ -2436,6 +2475,7 @@ static int nrc_inject_frame(struct sk_buff *skb, struct genl_info *info)
 
 	return 0;
 }
+#endif /* DEBUG */
 
 static int nrc_set_ie(struct sk_buff *skb, struct genl_info *info)
 {
@@ -2557,6 +2597,7 @@ static const struct genl_ops nl_umac_nl_ops[] = {
 #else
 static struct genl_ops nl_umac_nl_ops[] = {
 #endif
+#if defined(DEBUG)
 	{
 		.cmd = NL_WFA_CAPI_STA_GET_INFO,
 		.doit = capi_sta_get_info,
@@ -2570,6 +2611,8 @@ static struct genl_ops nl_umac_nl_ops[] = {
 	.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
+#if defined(DEBUG)
 	{
 		.cmd = NL_WFA_CAPI_STA_SET_11N,
 		.doit = capi_sta_set_11n,
@@ -2583,6 +2626,7 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
 	{
 		.cmd = NL_WFA_CAPI_SEND_ADDBA,
 		.doit = capi_sta_send_addba,
@@ -2611,6 +2655,7 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#if defined(DEBUG)
 	{
 		.cmd = NL_WFA_CAPI_BSS_MAX_IDLE,
 		.doit = capi_bss_max_idle,
@@ -2624,6 +2669,8 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
+#if defined(DEBUG)
 	{
 		.cmd = NL_WFA_CAPI_BSS_MAX_IDLE_OFFSET,
 		.doit = capi_bss_max_idle_offset,
@@ -2637,6 +2684,8 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
+#if defined(DEBUG)
 	{
 		.cmd = NL_TEST_MMIC_FAILURE,
 		.doit = test_mmic_failure,
@@ -2650,6 +2699,7 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
 	{
 		.cmd = NL_SHELL_RUN,
 		.doit = nrc_shell_run,
@@ -2663,6 +2713,7 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#if defined(DEBUG)
 	{
 		.cmd = NL_SHELL_RUN_SIMPLE,
 		.doit = nrc_shell_run_simple,
@@ -2676,6 +2727,8 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
+#if defined(DEBUG)
 	{
 		.cmd = NL_MGMT_FRAME_INJECTION,
 		.doit = nrc_inject_mgmt_frame,
@@ -2689,6 +2742,8 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
+#if defined(DEBUG)
 	{
 		.cmd = NL_HALOW_SET_DUT,
 		.doit = halow_set_dut,
@@ -2702,6 +2757,7 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
 	{
 		.cmd = NL_CLI_APP_GET_INFO,
 		.doit = cli_app_get_info,
@@ -2795,6 +2851,7 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#if defined(DEBUG)
 	{
 		.cmd = NL_MIC_SCAN,
 		.doit = nrc_mic_scan,
@@ -2808,6 +2865,8 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
+#if defined(DEBUG)
 	{
 		.cmd = NL_FRAME_INJECTION,
 		.doit = nrc_inject_frame,
@@ -2821,6 +2880,7 @@ static struct genl_ops nl_umac_nl_ops[] = {
 		.policy = nl_umac_policy,
 #endif
 	},
+#endif /* DEBUG */
 	{
 		.cmd = NL_SET_IE,
 		.doit = nrc_set_ie,
