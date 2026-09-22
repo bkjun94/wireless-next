@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: BSD-3-Clause-Clear */
 #ifndef _NRC_COUNTRY_H_
 #define _NRC_COUNTRY_H_
 

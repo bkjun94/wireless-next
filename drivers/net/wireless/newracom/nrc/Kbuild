@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0
+# SPDX-License-Identifier: BSD-3-Clause-Clear
 #
 # Kbuild file for NRC7394 Modular Driver
 # This file is used when building as part of the kernel tree or with M= option

@@ -1,5 +1,5 @@
+/* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
- *
  * Copyright (c) 2016-2024 Newracom, Inc.
  *
  * NRC Debug Interface - Unified debug macros for all modules

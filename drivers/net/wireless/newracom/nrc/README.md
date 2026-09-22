@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: BSD-3-Clause-Clear -->
+
 # Newracom NRC7394 802.11ah (HaLow) driver
 
 Three-layer modular Linux kernel driver for the Newracom NRC7394 Wi-Fi HaLow
