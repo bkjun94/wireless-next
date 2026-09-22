@@ -1,5 +1,5 @@
+/* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
- *
  * Copyright (c) 2016-2024 Newracom, Inc.
  *
  * NRC Build Configuration - Kernel version compatibility and feature flags

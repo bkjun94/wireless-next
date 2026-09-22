@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause-Clear
 # .clang-format for Linux kernel code
 # Based on the Linux kernel coding style (Documentation/process/coding-style.rst)
 

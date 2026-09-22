@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 /* Common directory headers - Debug & Trace */
 
 #include "nrc-debug-common.h"
