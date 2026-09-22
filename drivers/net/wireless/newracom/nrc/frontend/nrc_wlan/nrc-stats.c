@@ -74,7 +74,7 @@ moving_average_init(int size, int count,
 
 static void moving_average_deinit(struct moving_average *handle)
 {
-	BUG_ON(!handle);
+	/* Reachable with NULL when the matching init failed; kfree() copes */
 	kfree(handle);
 }
 
@@ -83,13 +83,12 @@ static void moving_average_update(struct moving_average *ma, void *arg)
 	int index, size;
 	uint8_t *p;
 
-	BUG_ON(!ma);
+	if (!ma || !arg)
+		return;
 
 	index = ma->index;
 	size = ma->size;
 	p = ma->arr;
-
-	BUG_ON(!p);
 
 	p += index * size;
 	memcpy(p, arg, size);
@@ -103,8 +102,10 @@ static void moving_average_update(struct moving_average *ma, void *arg)
 
 static int moving_average_compute(struct moving_average *ma)
 {
-	BUG_ON(!ma);
-	BUG_ON(!ma->compute);
+	if (!ma || !ma->compute) {
+		ERR("moving average handle not initialized");
+		return 0;
+	}
 	return ma->compute(ma->arr, ma->index, ma->count, ma->early);
 }
 
@@ -122,8 +123,6 @@ static int snr_compute(void *arr_t, int index, int count, bool early)
 	int sum = 0;
 	uint8_t *arr = arr_t;
 
-	BUG_ON(!arr);
-
 	for (i = 0; i < (early && index > 2 ? index : count); i++) {
 		uint8_t snr = arr[i];
 
@@ -131,17 +130,23 @@ static int snr_compute(void *arr_t, int index, int count, bool early)
 		max = max(snr, max);
 		sum += snr;
 	}
-	BUG_ON(count == 2);
 
+	/*
+	 * The trimmed mean drops the min and max sample, so it needs more than
+	 * two of them. Fall back to a plain average otherwise instead of
+	 * dividing by zero.
+	 */
 	if (early) {
 		if (index > 2) {
 			sum -= min;
 			sum -= max;
 			return sum / (index - 2);
-		} else {
-			return sum / index;
 		}
+		return index ? sum / index : 0;
 	}
+
+	if (count <= 2)
+		return count ? sum / count : 0;
 
 	sum -= min;
 	sum -= max;
@@ -165,6 +170,8 @@ void nrc_stats_snr_deinit(void)
 {
 	struct moving_average *h = nrc_stats_snr_get();
 
+	/* Clear the handle first: nrc_stats_snr() only guards against NULL */
+	snr_h = NULL;
 	moving_average_deinit(h);
 }
 
@@ -200,8 +207,6 @@ static int rssi_compute(void *arr_t, int index, int count, bool early)
 	int sum = 0;
 	int8_t *arr = arr_t;
 
-	BUG_ON(!arr);
-
 	for (i = 0; i < (early && index > 2 ? index : count); i++) {
 		int8_t rssi = (int8_t)arr[i];
 
@@ -210,17 +215,22 @@ static int rssi_compute(void *arr_t, int index, int count, bool early)
 		sum += rssi;
 	}
 
-	BUG_ON(count == 2);
-
+	/*
+	 * The trimmed mean drops the min and max sample, so it needs more than
+	 * two of them. Fall back to a plain average otherwise instead of
+	 * dividing by zero.
+	 */
 	if (early) {
 		if (index > 2) {
 			sum -= min;
 			sum -= max;
 			return sum / (index - 2);
-		} else {
-			return (index == 0) ? sum : (sum / index);
 		}
+		return index ? sum / index : 0;
 	}
+
+	if (count <= 2)
+		return count ? sum / count : 0;
 
 	sum -= min;
 	sum -= max;
@@ -244,6 +254,8 @@ void nrc_stats_rssi_deinit(void)
 {
 	struct moving_average *h = nrc_stats_rssi_get();
 
+	/* Clear the handle first: nrc_stats_rssi() only guards against NULL */
+	rssi_h = NULL;
 	moving_average_deinit(h);
 }
 
@@ -412,6 +424,14 @@ void nrc_stats_deinit(void)
 		kfree(cur);
 	}
 	spin_unlock(&state_lock);
+
+	/*
+	 * Release the per-channel noise entries as well. Without this the
+	 * ieee80211_channel objects allocated by
+	 * nrc_stats_channel_noise_update() are leaked on every unload, since
+	 * channel_noise_info[] lives in the module data section.
+	 */
+	nrc_stats_channel_noise_reset();
 }
 
 int nrc_stats_update(uint8_t *macaddr, int8_t snr, int8_t rssi)

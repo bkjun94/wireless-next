@@ -435,8 +435,6 @@ static bool fw_check_next_frag(struct nrc_hif_device *hdev,
 	priv->fw_data_pos += priv->frag_hdr.len;
 	priv->remain_bytes -= priv->frag_hdr.len;
 
-	index = priv->index;
-
 	/* update target frag info here, not in nrc_fw_update_frag */
 	frag_hdr->address += frag_hdr->len;
 	frag_hdr->eof = (priv->cur_chunk == (priv->num_chunks - 1));
@@ -447,7 +445,6 @@ static bool fw_check_next_frag(struct nrc_hif_device *hdev,
 		frag_hdr->len = min_t(u32, ROM_FRAG_BYTES, priv->remain_bytes);
 	}
 
-	BUG_ON(index != priv->index);
 	priv->index++;
 
 	return true;
@@ -736,7 +733,10 @@ static int fw_wait_ready(struct nrc_hif_device *hdev, int wait_ms,
 {
 	int i;
 
-	BUG_ON(!hdev);
+	if (!hdev) {
+		ERR_FW("HIF device not available");
+		return -ENODEV;
+	}
 
 	for (i = 0; i < retry_cnt; i++) {
 		if (nrc_hif_ops_fw_is_loaded()) {

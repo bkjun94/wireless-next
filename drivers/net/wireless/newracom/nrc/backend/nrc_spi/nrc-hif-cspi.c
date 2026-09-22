@@ -2120,8 +2120,12 @@ void c_spi_config(struct nrc_spi_priv *priv, struct nrc_hif_device *hdev)
 		priv->slot_sync_auto = true;
 		break;
 	default:
+		/*
+		 * Unknown chipset: keep the current slot sync setting instead of
+		 * taking the kernel down. Probe rejects unsupported chip ids.
+		 */
 		ERR("Unknown chipset %04x", sys->chip_id);
-		BUG();
+		break;
 	}
 
 	/* maybe 4, 32 is for batman-adv, see hw->max_mtu in nrc-mac80211.c */
@@ -2262,16 +2266,27 @@ int nrc_cspi_gpio_alloc(struct spi_device *spi)
 		ERR("gpio_request(nrc-reset) failed");
 		goto err;
 	}
+#endif
 
-	/* No DT reset-gpios: fall back to spi_reset_gpio module param. */
+	/*
+	 * Claim the reset GPIO named by the spi_reset_gpio module param.
+	 * With DT this is only the fallback for a missing reset-gpios; without
+	 * DT it is the only way to pick the reset GPIO at runtime, so the
+	 * request must not be tied to CONFIG_SPI_USE_DT.
+	 */
 	if (nrc_cspi_reset_gpio_param_request(spi->dev.platform_data) < 0)
 		goto err;
-#else
-	if (nrc_gpio_request(HOST_GPIO_FOR_TARGET_RST, "nrc-reset") < 0) {
-		ERR("gpio_request(nrc-reset) failed");
-		goto err;
+
+#if !defined(CONFIG_SPI_USE_DT)
+	/* Neither DT nor module param: use the compile-time reset GPIO. */
+	if (spi_reset_gpio < 0) {
+		if (nrc_gpio_request(HOST_GPIO_FOR_TARGET_RST, "nrc-reset") <
+		    0) {
+			ERR("gpio_request(nrc-reset) failed");
+			goto err;
+		}
+		nrc_gpio_direction_output(HOST_GPIO_FOR_TARGET_RST, 1);
 	}
-	nrc_gpio_direction_output(HOST_GPIO_FOR_TARGET_RST, 1);
 #endif
 #endif
 
@@ -2297,9 +2312,12 @@ err_rst_free:
 #endif
 #if defined(ENABLE_HW_RESET)
 #if !defined(CONFIG_SPI_USE_DT)
-	nrc_gpio_free(HOST_GPIO_FOR_TARGET_RST);
+	if (spi_reset_gpio < 0)
+		nrc_gpio_free(HOST_GPIO_FOR_TARGET_RST);
 #endif
 err:
+	/* Safe when the param GPIO was never claimed (reset_gpio_num == -1) */
+	nrc_cspi_reset_gpio_param_free(spi->dev.platform_data);
 #endif
 	return -EINVAL;
 }
@@ -2308,10 +2326,13 @@ void nrc_cspi_gpio_free(struct spi_device *spi)
 {
 #if defined(ENABLE_HW_RESET)
 #if !defined(CONFIG_SPI_USE_DT)
-	nrc_gpio_set_value(HOST_GPIO_FOR_TARGET_RST, 0);
-	msleep(10);
-	nrc_gpio_set_value(HOST_GPIO_FOR_TARGET_RST, 1);
-	nrc_gpio_free(HOST_GPIO_FOR_TARGET_RST);
+	/* Only claimed when the module param did not provide a reset GPIO */
+	if (spi_reset_gpio < 0) {
+		nrc_gpio_set_value(HOST_GPIO_FOR_TARGET_RST, 0);
+		msleep(10);
+		nrc_gpio_set_value(HOST_GPIO_FOR_TARGET_RST, 1);
+		nrc_gpio_free(HOST_GPIO_FOR_TARGET_RST);
+	}
 #endif
 	/* Release param HW reset GPIO if it was requested. */
 	nrc_cspi_reset_gpio_param_free(spi->dev.platform_data);
@@ -2514,7 +2535,7 @@ int nrc_hif_set_model_conf(struct nrc_hif_device *hdev, u16 chip_id)
 		break;
 	default:
 		ERR("Unknown Newracom IEEE80211 chipset %04x", hdev->chip_id);
-		BUG();
+		return -ENODEV;
 	}
 
 	INFO("- HW_QUEUES: %d", hdev->hw_queues);

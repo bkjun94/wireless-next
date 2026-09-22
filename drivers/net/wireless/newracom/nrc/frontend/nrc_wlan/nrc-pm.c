@@ -53,6 +53,16 @@
 
 #define BSS_MAX_IDLE_TIMER_PERIOD_MS 1000
 
+/*
+ * Stations disconnected within a single max-idle timer tick.
+ *
+ * The deauth path allocates an skb and walks the whole TX stack, so it must not
+ * run with preassoc_sta_lock held. Expired stations are therefore collected
+ * under the lock and disconnected after it is released; stations beyond this
+ * batch keep their expiry pending and are retried on the next tick.
+ */
+#define BSS_MAX_IDLE_DEAUTH_BATCH 8
+
 int tx_h_sta_pm(struct nrc_trx_data *tx)
 {
 #ifdef CONFIG_SUPPORT_AFTER_KERNEL_3_0_36
@@ -273,40 +283,76 @@ static void ap_max_idle_period_expire(struct timer_list *t)
 #endif
 	struct nrc_sta *i_sta = NULL, *tmp = NULL;
 	unsigned long flags;
-	u_int16_t sta_num = 0;
+	u8 deauth_addr[BSS_MAX_IDLE_DEAUTH_BATCH][ETH_ALEN];
+	int n_deauth = 0, deferred = 0, i;
 
 	spin_lock_irqsave(&i_vif->preassoc_sta_lock, flags);
 	list_for_each_entry_safe(i_sta, tmp, &i_vif->preassoc_sta_list, list)
 	{
-		sta_num++;
-		if (i_sta->max_idle.sta_idle_timer) {
-			if (--i_sta->max_idle.sta_idle_timer == 0) {
-				struct ieee80211_sta *sta =
-					to_ieee80211_sta(i_sta);
-				struct ieee80211_vif *vif = i_sta->vif;
-				/* TO DO - BSS_MAX_ILDE_DEAUTH_LIMIT_COUNT -> 0 */
-				if (++i_sta->max_idle.timeout_cnt >=
-				    BSS_MAX_ILDE_DEAUTH_LIMIT_COUNT) {
-					/* Inactivity (BSS MAX IDLE) timeout =>  disconnect the station */
-					i_sta->max_idle.timeout_cnt = 0;
-					DBG_MAC("[AP] keep-alive fail! Disconnecting inactive sta:%pM",
-						sta->addr);
-					ieee80211_disconnect_sta(vif, sta);
-				} else {
-					/* Re-arm the timer
-						: apply backoff for avoiding frequent deauth */
-					i_sta->max_idle.sta_idle_timer =
-						i_sta->max_idle.idle_period;
-					DBG_MAC("[AP] keep-alive timeout!(cnt:%d vs limit:%d) Rearm timer(%u) STA(%pM)",
-						i_sta->max_idle.timeout_cnt,
-						BSS_MAX_ILDE_DEAUTH_LIMIT_COUNT,
-						i_sta->max_idle.sta_idle_timer,
-						sta->addr);
-				}
-			}
+		struct ieee80211_sta *sta;
+
+		if (!i_sta->max_idle.sta_idle_timer)
+			continue;
+		if (--i_sta->max_idle.sta_idle_timer != 0)
+			continue;
+
+		sta = to_ieee80211_sta(i_sta);
+
+		/* TO DO - BSS_MAX_ILDE_DEAUTH_LIMIT_COUNT -> 0 */
+		if (++i_sta->max_idle.timeout_cnt <
+		    BSS_MAX_ILDE_DEAUTH_LIMIT_COUNT) {
+			/* Re-arm the timer
+				: apply backoff for avoiding frequent deauth */
+			i_sta->max_idle.sta_idle_timer =
+				i_sta->max_idle.idle_period;
+			DBG_MAC("[AP] keep-alive timeout!(cnt:%d vs limit:%d) Rearm timer(%u) STA(%pM)",
+				i_sta->max_idle.timeout_cnt,
+				BSS_MAX_ILDE_DEAUTH_LIMIT_COUNT,
+				i_sta->max_idle.sta_idle_timer, sta->addr);
+			continue;
 		}
+
+		/*
+		 * Inactivity (BSS MAX IDLE) timeout => disconnect the station.
+		 * Only record the address here: the deauth path must run with
+		 * the lock released. Keep the expiry pending when the batch is
+		 * full so the station is retried on the next tick instead of
+		 * being silently skipped.
+		 */
+		if (n_deauth == ARRAY_SIZE(deauth_addr)) {
+			i_sta->max_idle.sta_idle_timer =
+				i_sta->max_idle.idle_period;
+			i_sta->max_idle.timeout_cnt--;
+			deferred++;
+			continue;
+		}
+
+		i_sta->max_idle.timeout_cnt = 0;
+		ether_addr_copy(deauth_addr[n_deauth++], sta->addr);
 	}
 	spin_unlock_irqrestore(&i_vif->preassoc_sta_lock, flags);
+
+	if (deferred)
+		DBG_MAC("[AP] keep-alive: %d disconnect(s) deferred to next tick",
+			deferred);
+
+	/*
+	 * Disconnect outside the lock. The station may have been removed in the
+	 * meantime, so resolve it again; the result is only valid under RCU.
+	 */
+	for (i = 0; i < n_deauth; i++) {
+		struct ieee80211_vif *vif = to_ieee80211_vif(i_vif);
+		struct ieee80211_sta *sta;
+
+		rcu_read_lock();
+		sta = ieee80211_find_all_sta(vif, deauth_addr[i]);
+		if (sta) {
+			DBG_MAC("[AP] keep-alive fail! Disconnecting inactive sta:%pM",
+				sta->addr);
+			ieee80211_disconnect_sta(vif, sta);
+		}
+		rcu_read_unlock();
+	}
 
 	mod_timer(&i_vif->max_idle_timer,
 		  jiffies + msecs_to_jiffies(BSS_MAX_IDLE_TIMER_PERIOD_MS));

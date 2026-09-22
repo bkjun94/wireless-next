@@ -813,16 +813,22 @@ static bool ieee80211_is_data_data(__le16 fc)
 static void insert_qos_ctrl_field_in_skb(struct sk_buff *skb,
 					 unsigned int hdr_len)
 {
-	struct ieee80211_hdr *mh = (void *)skb->data;
-	bool is_multi = ((mh->addr1[0] & 0x01) != 0);
+	struct ieee80211_hdr *mh;
+	bool is_multi;
 	u16 fc = 0;
 	u16 qos_ctrl =
 		0; //Set TID '0' in QoS Field when converting to qos data.
 
+	/* Check before dereferencing: the old check ran after skb->data was
+	 * already read, so it could never have caught a NULL skb.
+	 */
 	if (!skb) {
 		DBG_MAC("invalid skb [%s, %d] ## ", __func__, __LINE__);
-		BUG();
+		return;
 	}
+
+	mh = (void *)skb->data;
+	is_multi = ((mh->addr1[0] & 0x01) != 0);
 
 	memcpy(&fc, &mh->frame_control, sizeof(mh->frame_control));
 	fc |= cpu_to_le16(IEEE80211_STYPE_QOS_DATA);
@@ -960,11 +966,14 @@ static int nrc_vendor_ann_event(struct nrc *nw, const u8 *data, u16 len,
 	struct ieee80211_hw *hw = nw->hw;
 	struct sk_buff *skb;
 
-	print_hex_dump(KERN_DEBUG, "event: ", DUMP_PREFIX_NONE, 16, 1, data,
-		       len, false);
-
+	/*
+	 * Reached from the RX handler chain, which runs inside
+	 * rcu_read_lock(), so neither the SKB allocation nor the event
+	 * delivery may sleep. The payload is bounded at 255 bytes, so an
+	 * atomic allocation is not a burden.
+	 */
 	skb = cfg80211_vendor_event_alloc(hw->wiphy, NULL, 255, eid,
-					  GFP_KERNEL);
+					  GFP_ATOMIC);
 
 	if (!skb)
 		return -ENOMEM;
@@ -974,7 +983,7 @@ static int nrc_vendor_ann_event(struct nrc *nw, const u8 *data, u16 len,
 		return -EMSGSIZE;
 	}
 
-	cfg80211_vendor_event(skb, GFP_KERNEL);
+	cfg80211_vendor_event(skb, GFP_ATOMIC);
 
 	return 0;
 }
