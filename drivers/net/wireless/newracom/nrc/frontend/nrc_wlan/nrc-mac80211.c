@@ -945,6 +945,18 @@ static int nrc_vendor_update_beacon(struct ieee80211_hw *hw,
 	struct sk_buff *skb, *b;
 	u8 *pos;
 	u16 need_headroom, need_tailroom;
+
+	/*
+	 * Only a beaconing interface has a beacon template, and mac80211
+	 * warns (WARN_ON in __ieee80211_beacon_get) when asked for one on
+	 * any other type. The beacon-family vendor commands can arrive on a
+	 * STA vif, so refuse them here instead of tripping that warning.
+	 */
+	if (!vif || (vif->type != NL80211_IFTYPE_AP &&
+		     vif->type != NL80211_IFTYPE_ADHOC &&
+		     vif->type != NL80211_IFTYPE_MESH_POINT))
+		return -EOPNOTSUPP;
+
 #ifdef CONFIG_USE_LINK_ID
 	b = ieee80211_beacon_get_template(hw, vif, NULL, vif->bss_conf.link_id);
 #else
@@ -5357,6 +5369,16 @@ static u8 *nrc_vendor_remove(struct nrc *nw, u8 subcmd)
 		vendor_skb_ptr = &nw->vendor_skb_assoc_req;
 	}
 
+	/*
+	 * The sub-command reaches this function straight from user data, so a
+	 * value outside the four ranges above leaves vendor_skb_ptr unset.
+	 * Reject it instead of dereferencing a null pointer.
+	 */
+	if (!vendor_skb_ptr) {
+		ERR("%s: unknown vendor sub-command %u", __func__, subcmd);
+		return NULL;
+	}
+
 	if (!(*vendor_skb_ptr))
 		return NULL;
 
@@ -5404,17 +5426,31 @@ static int nrc_vendor_update(struct nrc *nw, u8 subcmd, const u8 *data,
 	else
 		WARN_ON(true);
 
+	if (!vendor_skb_ptr)
+		return -EINVAL;
+
 	if (!(*vendor_skb_ptr)) {
 		*vendor_skb_ptr = dev_alloc_skb(IEEE80211_MAX_FRAME_LEN);
-		if (*vendor_skb_ptr) {
-			/* Track FRAME SKB allocation (TX path - vendor IE) */
-			NRC_SKB_TRACK_ALLOC(nw->hdev, *vendor_skb_ptr,
-					    HIF_TYPE_FRAME, false, false);
-		}
+		if (!(*vendor_skb_ptr))
+			return -ENOMEM;
+		/* Track FRAME SKB allocation (TX path - vendor IE) */
+		NRC_SKB_TRACK_ALLOC(nw->hdev, *vendor_skb_ptr, HIF_TYPE_FRAME,
+				    false, false);
 	}
 
 	// Remove old data first
 	pos = nrc_vendor_remove(nw, subcmd);
+
+	/*
+	 * One buffer holds the elements of every sub-command that shares it, so
+	 * the total can outgrow it even though each element is bounded. skb_put()
+	 * would panic the kernel on overflow, so refuse the request instead.
+	 */
+	if (skb_tailroom(*vendor_skb_ptr) < new_elem_len) {
+		ERR("%s: vendor IE buffer full (need %d, free %d)", __func__,
+		    new_elem_len, skb_tailroom(*vendor_skb_ptr));
+		return -ENOSPC;
+	}
 
 	/* Append new data */
 	pos = skb_put(*vendor_skb_ptr, new_elem_len);
@@ -5716,10 +5752,12 @@ static int nrc_vendor_cmd_append(struct wiphy *wiphy, struct wireless_dev *wdev,
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct ieee80211_vif *vif = wdev_to_ieee80211_vif(wdev);
 	struct nrc *nw = hw->priv;
+	int ret;
 
 	/* Update local vendor data */
-	if (nrc_vendor_update(nw, subcmd, data, data_len) != 0)
-		return -EINVAL;
+	ret = nrc_vendor_update(nw, subcmd, data, data_len);
+	if (ret)
+		return ret;
 	// Schedule async vendor IE removal if REMOTECMD
 	if (subcmd == NRC_SUBCMD_REMOTECMD) {
 #ifdef CONFIG_USE_VIF_CFG
@@ -5760,12 +5798,18 @@ static int nrc_vendor_cmd_wowlan_pattern(struct wiphy *wiphy,
 	struct sk_buff *skb;
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct nrc *nw = hw->priv;
-	u8 *new_data = (u8 *)data;
-	u8 count = *new_data;
+	const u8 *new_data = data;
+	u8 count;
 
 	DBG_MAC("%s: called", __func__);
+
+	/* One count byte followed by at least one pattern byte. */
+	if (!data || data_len < 2)
+		return -EINVAL;
+
+	count = *new_data;
 	nrc_vendor_cmd_append(wiphy, wdev, NRC_SUBCMD_WOWLAN_PATTERN,
-			      (void *)(new_data + 1), data_len - 1);
+			      new_data + 1, data_len - 1);
 
 	queue_delayed_work(nw->hdev->workqueue,
 			   &nw->rm_vendor_ie_wowlan_pattern,
@@ -5834,7 +5878,12 @@ static int nrc_vendor_cmd_remove_vendor_ie(struct wiphy *wiphy,
 					   const void *data, int data_len)
 {
 	DBG_MAC("%s: called", __func__);
-	return nrc_vendor_cmd_remove(wiphy, wdev, *((u8 *)data));
+
+	/* The sub-command byte is the whole payload; it has to be there. */
+	if (!data || data_len < 1)
+		return -EINVAL;
+
+	return nrc_vendor_cmd_remove(wiphy, wdev, *((const u8 *)data));
 }
 
 static int nrc_vendor_cmd_bcast_fota_info(struct wiphy *wiphy,
