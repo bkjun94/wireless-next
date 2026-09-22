@@ -2180,27 +2180,34 @@ int nrc_cspi_hw_reset(struct nrc_spi_priv *priv)
 		return -EINVAL;
 
 #if defined(ENABLE_HW_RESET)
+	/*
+	 * The reset line has to be named explicitly, either by the device tree
+	 * or by the spi_reset_gpio module parameter, and the device tree wins
+	 * when both are present. A board that names neither has no line to
+	 * pulse, so report no device and let the caller use the soft reset.
+	 *
+	 * The parameter is a global GPIO number, which is only correct while
+	 * the SoC gpiochip base is 0. Raspberry Pi kernels from 6.x place that
+	 * chip at base 512, so the same physical pin is 516 there; boards on
+	 * such kernels use the device tree instead.
+	 */
 #if defined(CONFIG_SPI_USE_DT)
-	if (!priv->reset_gpio)
+	if (priv->reset_gpio) {
+		/* Assert (active low line, so a 1 here drives reset) */
+		gpiod_set_value_cansleep(priv->reset_gpio, 1);
+		msleep(10);
+		gpiod_set_value_cansleep(priv->reset_gpio, 0);
+		INFO("Chip reset: hardware line (dt gpio)");
+		return 0;
+	}
+#endif
+	if (priv->reset_gpio_num < 0)
 		return -ENODEV;
 
-	/* Assert (active low line, so a 1 here drives reset) */
-	gpiod_set_value_cansleep(priv->reset_gpio, 1);
+	nrc_gpio_set_value(priv->reset_gpio_num, 0);
 	msleep(10);
-	gpiod_set_value_cansleep(priv->reset_gpio, 0);
-#else
-	/*
-	 * Legacy numbering. HOST_GPIO_FOR_TARGET_RST is a global GPIO number,
-	 * which is only correct while the SoC gpiochip base is 0. Raspberry Pi
-	 * kernels from 6.x place that chip at base 512, so the same physical
-	 * pin is 516 there; boards on such kernels use the device tree path
-	 * above instead.
-	 */
-	nrc_gpio_set_value(HOST_GPIO_FOR_TARGET_RST, 0);
-	msleep(10);
-	nrc_gpio_set_value(HOST_GPIO_FOR_TARGET_RST, 1);
-#endif
-	INFO("Chip reset: hardware line");
+	nrc_gpio_set_value(priv->reset_gpio_num, 1);
+	INFO("Chip reset: hardware line (param gpio %d)", priv->reset_gpio_num);
 	return 0;
 #else
 	return -ENODEV;
@@ -2276,18 +2283,6 @@ int nrc_cspi_gpio_alloc(struct spi_device *spi)
 	 */
 	if (nrc_cspi_reset_gpio_param_request(spi->dev.platform_data) < 0)
 		goto err;
-
-#if !defined(CONFIG_SPI_USE_DT)
-	/* Neither DT nor module param: use the compile-time reset GPIO. */
-	if (spi_reset_gpio < 0) {
-		if (nrc_gpio_request(HOST_GPIO_FOR_TARGET_RST, "nrc-reset") <
-		    0) {
-			ERR("gpio_request(nrc-reset) failed");
-			goto err;
-		}
-		nrc_gpio_direction_output(HOST_GPIO_FOR_TARGET_RST, 1);
-	}
-#endif
 #endif
 
 	/* Power save GPIO allocation moved to HAL initialization -
@@ -2311,10 +2306,6 @@ int nrc_cspi_gpio_alloc(struct spi_device *spi)
 err_rst_free:
 #endif
 #if defined(ENABLE_HW_RESET)
-#if !defined(CONFIG_SPI_USE_DT)
-	if (spi_reset_gpio < 0)
-		nrc_gpio_free(HOST_GPIO_FOR_TARGET_RST);
-#endif
 err:
 	/* Safe when the param GPIO was never claimed (reset_gpio_num == -1) */
 	nrc_cspi_reset_gpio_param_free(spi->dev.platform_data);
@@ -2325,15 +2316,6 @@ err:
 void nrc_cspi_gpio_free(struct spi_device *spi)
 {
 #if defined(ENABLE_HW_RESET)
-#if !defined(CONFIG_SPI_USE_DT)
-	/* Only claimed when the module param did not provide a reset GPIO */
-	if (spi_reset_gpio < 0) {
-		nrc_gpio_set_value(HOST_GPIO_FOR_TARGET_RST, 0);
-		msleep(10);
-		nrc_gpio_set_value(HOST_GPIO_FOR_TARGET_RST, 1);
-		nrc_gpio_free(HOST_GPIO_FOR_TARGET_RST);
-	}
-#endif
 	/* Release param HW reset GPIO if it was requested. */
 	nrc_cspi_reset_gpio_param_free(spi->dev.platform_data);
 #endif
