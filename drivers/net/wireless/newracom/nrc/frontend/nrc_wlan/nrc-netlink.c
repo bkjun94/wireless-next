@@ -407,9 +407,17 @@ static int halow_set_dut(struct sk_buff *skb, struct genl_info *info)
 		0,
 	};
 
+	/* All attributes are required; reject the request if any is missing */
 	if (!info->attrs[NL_HALOW_PARAM_NAME] ||
-	    !info->attrs[NL_HALOW_PARAM_STR_VAL])
+	    !info->attrs[NL_HALOW_PARAM_STR_VAL]) {
+		ERR("missing required attribute");
 		return -EINVAL;
+	}
+
+	/*
+	 * Bound the copy by the destination buffer size, not the
+	 * caller-supplied source length, and reject a truncated value.
+	 */
 #if KERNEL_VERSION(5, 11, 0) <= NRC_TARGET_KERNEL_VERSION
 	if (nla_strscpy(param_name, info->attrs[NL_HALOW_PARAM_NAME],
 			sizeof(param_name)) < 0 ||
@@ -586,8 +594,8 @@ static int halow_set_dut(struct sk_buff *skb, struct genl_info *info)
 				goto halow_not_supported;
 			}
 			/* Track FRAME SKB allocation (TX path) */
-			NRC_SKB_TRACK_ALLOC(nrc_nw->hdev, b, HIF_TYPE_FRAME, false,
-					   false);
+			NRC_SKB_TRACK_ALLOC(nrc_nw->hdev, b, HIF_TYPE_FRAME,
+					    false, false);
 			skb_set_queue_mapping(b, IEEE80211_AC_VO);
 #ifdef CONFIG_SUPPORT_CHANNEL_INFO
 #ifdef CONFIG_USE_BSS_CHAN_CONF
@@ -599,7 +607,8 @@ static int halow_set_dut(struct sk_buff *skb, struct genl_info *info)
 			if (!chanctx_conf) {
 				rcu_read_unlock();
 				NRC_SKB_TRACK_FREE(nrc_nw->hdev, b,
-						   HIF_TYPE_FRAME, false, false);
+						   HIF_TYPE_FRAME, false,
+						   false);
 				goto halow_not_supported;
 			}
 			band = chanctx_conf->def.chan->band;
@@ -608,7 +617,8 @@ static int halow_set_dut(struct sk_buff *skb, struct genl_info *info)
 						      NULL)) {
 				rcu_read_unlock();
 				NRC_SKB_TRACK_FREE(nrc_nw->hdev, b,
-						   HIF_TYPE_FRAME, false, false);
+						   HIF_TYPE_FRAME, false,
+						   false);
 				goto halow_not_supported;
 			}
 #else
@@ -690,9 +700,17 @@ static int capi_sta_set_11n(struct sk_buff *skb, struct genl_info *info)
 	};
 	uint16_t u8_value = 0;
 
+	/* All attributes are required; reject the request if any is missing */
 	if (!info->attrs[NL_WFA_CAPI_PARAM_NAME] ||
-	    !info->attrs[NL_WFA_CAPI_PARAM_STR_VAL])
+	    !info->attrs[NL_WFA_CAPI_PARAM_STR_VAL]) {
+		ERR("missing required attribute");
 		return -EINVAL;
+	}
+
+	/*
+	 * Bound the copy by the destination buffer size, not the
+	 * caller-supplied source length, and reject a truncated value.
+	 */
 #if KERNEL_VERSION(5, 11, 0) <= NRC_TARGET_KERNEL_VERSION
 	if (nla_strscpy(param_name, info->attrs[NL_WFA_CAPI_PARAM_NAME],
 			sizeof(param_name)) < 0 ||
@@ -947,8 +965,7 @@ static int capi_sta_send_addba(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (NRC_DRV_IS_NOT_RUNNING(hdev)) {
-		ERR(
-			"[Error] the target device cannot respond while deep sleep.");
+		ERR("Device is not running");
 		return -EIO;
 	}
 
@@ -1033,8 +1050,7 @@ static int capi_sta_send_delba(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (NRC_DRV_IS_NOT_RUNNING(hdev)) {
-		ERR(
-			"[Error] the target device cannot respond while deep sleep.");
+		ERR("Device is not running");
 		return -EIO;
 	}
 
@@ -1086,8 +1102,7 @@ static int capi_bss_max_idle_offset(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (NRC_DRV_IS_NOT_RUNNING(hdev)) {
-		ERR(
-			"[Error] the target device cannot respond while deep sleep.");
+		ERR("Device is not running");
 		return -EIO;
 	}
 
@@ -1158,8 +1173,7 @@ static int capi_bss_max_idle(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (NRC_DRV_IS_NOT_RUNNING(hdev)) {
-		ERR(
-			"[Error] the target device cannot respond while deep sleep.");
+		ERR("Device is not running");
 		return -EIO;
 	}
 
@@ -1172,7 +1186,8 @@ static int capi_bss_max_idle(struct sk_buff *skb, struct genl_info *info)
 	max_idle = nla_get_s32(info->attrs[NL_WFA_CAPI_PARAM_BSS_MAX_IDLE]);
 	vif_id = nla_get_s32(info->attrs[NL_WFA_CAPI_PARAM_VIF_ID]);
 	if (vif_id < 0 || vif_id >= NR_NRC_VIF)
-		return capi_sta_reply(NL_WFA_CAPI_BSS_MAX_IDLE, info, NL_WFA_CAPI_RESP_ERR);
+		return capi_sta_reply(NL_WFA_CAPI_BSS_MAX_IDLE, info,
+				      NL_WFA_CAPI_RESP_ERR);
 	no_usf_auto_convert =
 		info->attrs[NL_WFA_CAPI_PARAM_BSS_MAX_IDLE_OFFSET] ?
 		nla_get_s32(info->attrs[NL_WFA_CAPI_PARAM_BSS_MAX_IDLE_OFFSET])
@@ -1424,8 +1439,7 @@ static int nrc_shell_run_simple(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (NRC_DRV_IS_NOT_RUNNING(hdev)) {
-		ERR(
-			"[Error] the target device cannot respond while deep sleep.");
+		ERR("Device is not running");
 		return -EIO;
 	}
 	if (!nrc_access_vif(nrc_nw)) {
@@ -1464,8 +1478,8 @@ static atomic_t nrc_shell_running_state = ATOMIC_INIT(NRC_SHELL_IDLE);
  */
 static bool nrc_shell_try_acquire(void)
 {
-	return atomic_cmpxchg(&nrc_shell_running_state,
-			      NRC_SHELL_IDLE, NRC_SHELL_RUNNING) == NRC_SHELL_IDLE;
+	return atomic_cmpxchg(&nrc_shell_running_state, NRC_SHELL_IDLE,
+			      NRC_SHELL_RUNNING) == NRC_SHELL_IDLE;
 }
 
 static void nrc_shell_release(void)
@@ -1490,8 +1504,7 @@ static int nrc_shell_run(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (NRC_DRV_IS_NOT_RUNNING(hdev)) {
-		ERR(
-			"[Error] the target device cannot respond while deep sleep.");
+		ERR("Device is not running");
 		return -EIO;
 	}
 	if (!nrc_access_vif(nrc_nw)) {
@@ -1565,8 +1578,8 @@ static int nrc_shell_run(struct sk_buff *skb, struct genl_info *info)
 
 		if (wim->cmd == WIM_CMD_SHELL) {
 			struct wim_tlv *tlv = (struct wim_tlv *)(wim + 1);
-			size_t copy_len = min_t(size_t, tlv->l,
-						sizeof(cmd_resp) - 1);
+			size_t copy_len =
+				min_t(size_t, tlv->l, sizeof(cmd_resp) - 1);
 
 			memcpy(cmd_resp, &tlv->v, copy_len);
 			cmd_resp[copy_len] = 0;
@@ -1608,8 +1621,7 @@ static int nrc_shell_run_raw(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (NRC_DRV_IS_NOT_RUNNING(hdev)) {
-		ERR(
-			"[Error] the target device cannot respond while deep sleep.");
+		ERR("Device is not running");
 		return -EIO;
 	}
 	if (!nrc_access_vif(nrc_nw)) {
@@ -1670,8 +1682,8 @@ static int nrc_shell_run_raw(struct sk_buff *skb, struct genl_info *info)
 		struct wim *wim = (struct wim *)wim_resp->data;
 		if (wim->cmd == WIM_CMD_SHELL_RAW) {
 			struct wim_tlv *tlv = (struct wim_tlv *)(wim + 1);
-			size_t copy_len = min_t(size_t, tlv->l,
-						sizeof(cmd_resp) - 1);
+			size_t copy_len =
+				min_t(size_t, tlv->l, sizeof(cmd_resp) - 1);
 
 			memcpy(cmd_resp, &tlv->v, copy_len);
 			nla_put(msg, NL_SHELL_RUN_CMD_RESP_RAW, copy_len,
@@ -1766,7 +1778,7 @@ static int cli_app_get_info(struct sk_buff *skb, struct genl_info *info)
 			 signal_monitor);
 		total_count = nrc_stats_report_count();
 		scnprintf(cmd_resp, sizeof(cmd_resp), "%d,%d", total_count,
-			 max_number_per_response);
+			  max_number_per_response);
 	} else if (strcmp(cmd, "show signal stop") == 0) {
 		//stop monitoring
 		signal_monitor = false;
@@ -1949,7 +1961,8 @@ static int cli_app_driver_cmd(struct sk_buff *skb, struct genl_info *info)
 			snprintf(cmd_resp, sizeof(cmd_resp), "fail");
 		} else if (strcmp(argv[1], "ps_conf") == 0) {
 			snprintf(cmd_resp, sizeof(cmd_resp), "%s",
-				 nrc_nw->params->power_save > 0 ? "ENABLE" : "DISABLE");
+				 nrc_nw->params->power_save > 0 ? "ENABLE" :
+								  "DISABLE");
 		} else if (strcmp(argv[1], "ps_status") == 0) {
 			snprintf(cmd_resp, sizeof(cmd_resp), "%s",
 				 nrc_ps_get_state_str(nrc_nw));
@@ -2011,6 +2024,7 @@ static int nl_apf_set_enable(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (!info->attrs[NL_APF_PARAM_ENABLE]) {
+		ERR("missing enable attribute");
 		nlmsg_free(msg);
 		return -EINVAL;
 	}
@@ -2174,6 +2188,7 @@ static int nl_apf_set_filter(struct sk_buff *skb, struct genl_info *info)
 	if (!info->attrs[NL_APF_PARAM_FILTER] ||
 	    nla_len(info->attrs[NL_APF_PARAM_FILTER]) !=
 		sizeof(struct apf_filter)) {
+		ERR("invalid filter attribute size");
 		nlmsg_free(msg);
 		return -EINVAL;
 	}
@@ -2187,8 +2202,11 @@ static int nl_apf_set_filter(struct sk_buff *skb, struct genl_info *info)
 
 	memcpy(filter, param, sizeof(struct apf_filter));
 
+	/* Bound the caller-supplied length/offset to the filter data buffer */
 	if (filter->offset < 0 || filter->offset > MAX_APF_LEN ||
 	    filter->len < 0 || filter->len > MAX_APF_LEN) {
+		ERR("filter offset %d / len %d out of range", filter->offset,
+		    filter->len);
 		kfree(filter);
 		nlmsg_free(msg);
 		return -EINVAL;
@@ -2252,6 +2270,7 @@ static int nl_apf_get_filter(struct sk_buff *skb, struct genl_info *info)
 	if (!info->attrs[NL_APF_PARAM_FILTER] ||
 	    nla_len(info->attrs[NL_APF_PARAM_FILTER]) !=
 		sizeof(struct apf_filter)) {
+		ERR("invalid filter attribute size");
 		nlmsg_free(msg);
 		return -EINVAL;
 	}
@@ -2265,10 +2284,13 @@ static int nl_apf_get_filter(struct sk_buff *skb, struct genl_info *info)
 
 	memcpy(filter, param, sizeof(struct apf_filter));
 
+	/* Bound the caller-supplied length/offset to the filter data buffer */
 	max_len = nrc_apf_get_maxlen(nrc_nw);
 	if (filter->offset < 0 || filter->offset > MAX_APF_LEN ||
 	    filter->len < 0 || filter->len > MAX_APF_LEN || max_len <= 0 ||
 	    (u64)filter->offset + (u64)filter->len > (u64)max_len) {
+		ERR("filter offset %d / len %d out of range (max %d)",
+		    filter->offset, filter->len, max_len);
 		kfree(filter);
 		nlmsg_free(msg);
 		return -EINVAL;
@@ -2306,9 +2328,12 @@ static int nrc_mic_scan(struct sk_buff *skb, struct genl_info *info)
 		return -ENODEV;
 	}
 
+	/* Both channel bounds are required */
 	if (!info->attrs[NL_MIC_SCAN_CHANNEL_START] ||
-	    !info->attrs[NL_MIC_SCAN_CHANNEL_END])
+	    !info->attrs[NL_MIC_SCAN_CHANNEL_END]) {
+		ERR("missing channel range attribute");
 		return -EINVAL;
+	}
 
 	channel.channel_start =
 		nla_get_s32(info->attrs[NL_MIC_SCAN_CHANNEL_START]);
@@ -2364,6 +2389,9 @@ static int nrc_mic_scan(struct sk_buff *skb, struct genl_info *info)
 	return genlmsg_reply(msg, info);
 }
 
+/* Shortest legal 802.11 frame (ACK/CTS): frame control + duration + RA */
+#define NRC_MIN_80211_FRAME_LEN 10
+
 static int nrc_inject_frame(struct sk_buff *skb, struct genl_info *info)
 {
 	struct sk_buff *buffer;
@@ -2371,12 +2399,25 @@ static int nrc_inject_frame(struct sk_buff *skb, struct genl_info *info)
 	uint8_t *frame;
 	int length;
 
-	if (!attr)
+	/* The frame buffer attribute is required */
+	if (!attr) {
+		ERR("missing frame buffer attribute");
 		return -EINVAL;
+	}
 
 	length = nla_len(attr);
-	if (length < sizeof(__le16))
+
+	/*
+	 * Bound the injected frame by both the shortest legal 802.11 frame
+	 * and the maximum frame size: the lower bound avoids a short read of
+	 * the frame control field, the upper bound avoids an unbounded
+	 * caller-driven allocation.
+	 */
+	if (length < NRC_MIN_80211_FRAME_LEN ||
+	    length > IEEE80211_MAX_FRAME_LEN) {
+		ERR("invalid injected frame length %d", length);
 		return -EINVAL;
+	}
 
 	buffer = dev_alloc_skb(nrc_nw->hw->extra_tx_headroom + length);
 	if (!buffer) {
@@ -2388,6 +2429,7 @@ static int nrc_inject_frame(struct sk_buff *skb, struct genl_info *info)
 	skb_reserve(buffer, nrc_nw->hw->extra_tx_headroom);
 
 	frame = skb_put(buffer, length);
+	/* Injected frame data is binary; copy it with a bounded memcpy. */
 	nla_memcpy(frame, attr, length);
 
 	nrc_hal_ops_xmit_injected_frame(NULL, NULL, buffer);
@@ -2402,18 +2444,31 @@ static int nrc_set_ie(struct sk_buff *skb, struct genl_info *info)
 	struct nlattr *data_attr;
 	int data_len;
 
+	/* All attributes are required; reject the request if any is missing */
 	data_attr = info->attrs[NL_SET_IE_DATA];
 	if (!info->attrs[NL_SET_IE_EID] || !info->attrs[NL_SET_IE_LENGTH] ||
-	    !data_attr)
+	    !data_attr) {
+		ERR("missing required attribute");
 		return -EINVAL;
+	}
 
 	ie.eid = nla_get_u16(info->attrs[NL_SET_IE_EID]);
 	ie.length = nla_get_u8(info->attrs[NL_SET_IE_LENGTH]);
 	data_len = nla_len(data_attr);
 
+	/*
+	 * Reject a caller-supplied length that would overflow the buffer, and
+	 * an attribute larger than the destination as malformed; the one
+	 * extra byte is the trailing NUL the existing senders append to a
+	 * full-size IE.
+	 */
 	if (ie.length > INFO_ELEMENT_MAX_LENGTH ||
-	    (int)ie.length > data_len)
+	    (int)ie.length > data_len ||
+	    data_len > (int)sizeof(ie.data) + 1) {
+		ERR("IE length %u / attribute %d out of range", ie.length,
+		    data_len);
 		return -EINVAL;
+	}
 
 	wim_skb = nrc_hal_ops_wim_alloc_skb(WIM_CMD_SET_IE,
 					    tlv_len(sizeof(struct wim_set_ie_param)));
@@ -2435,17 +2490,29 @@ static int nrc_set_sae(struct sk_buff *skb, struct genl_info *info)
 	struct wim_set_sae_param sae = {};
 	struct nlattr *data_attr;
 
+	/* All attributes are required; reject the request if any is missing */
 	data_attr = info->attrs[NL_SET_SAE_DATA];
 	if (!info->attrs[NL_SET_SAE_EID] ||
-	    !info->attrs[NL_SET_SAE_LENGTH] || !data_attr)
+	    !info->attrs[NL_SET_SAE_LENGTH] || !data_attr) {
+		ERR("missing required attribute");
 		return -EINVAL;
+	}
 
 	sae.eid = nla_get_u16(info->attrs[NL_SET_SAE_EID]);
 	sae.length = nla_get_u16(info->attrs[NL_SET_SAE_LENGTH]);
 
+	/*
+	 * Reject a caller-supplied length that would overflow the buffer, and
+	 * an attribute larger than the destination as malformed; the one
+	 * extra byte is the trailing NUL the existing senders append.
+	 */
 	if (sae.length > SET_SAE_MAX_LENGTH ||
-	    (int)sae.length > nla_len(data_attr))
+	    (int)sae.length > nla_len(data_attr) ||
+	    nla_len(data_attr) > (int)sizeof(sae.data) + 1) {
+		ERR("SAE length %u / attribute %d out of range", sae.length,
+		    nla_len(data_attr));
 		return -EINVAL;
+	}
 
 	wim_skb = nrc_hal_ops_wim_alloc_skb(WIM_CMD_SET_SAE,
 					    tlv_len(sizeof(struct wim_set_sae_param)));
@@ -2467,12 +2534,12 @@ static int nrc_auto_ba_toggle(struct sk_buff *skb, struct genl_info *info)
 	struct nrc *nw = nrc_nw;
 	bool toggle;
 
-	if (!info->attrs[NL_AUTO_BA_ON])
+	if (!nw || !nw->params || !info->attrs[NL_AUTO_BA_ON]) {
+		ERR("invalid params or missing attribute");
 		return -EINVAL;
-	toggle = nla_get_u8(info->attrs[NL_AUTO_BA_ON]) ? true : false;
+	}
 
-	if (!nw || !nw->params)
-		return -EINVAL;
+	toggle = nla_get_u8(info->attrs[NL_AUTO_BA_ON]) ? true : false;
 
 	if (toggle)
 		nw->params->ampdu_mode = NRC_AMPDU_AUTO;
@@ -2841,9 +2908,7 @@ int nrc_netlink_init(struct nrc *nw)
 #endif
 
 	if (rc) {
-		ERR(
-			"genl_register_family_with_ops_groups() is failed (%d).",
-			rc);
+		ERR("genl_register_family() is failed (%d).", rc);
 		nrc_nw = NULL;
 		return -EINVAL;
 	}

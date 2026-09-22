@@ -85,13 +85,13 @@ int send_to_netlink(int id, struct sk_buff *skb, struct nrc_hif_device *hdev,
 	/* Validate input parameters */
 	if (!skb || !skb->data) {
 		ERR("send_to_netlink: Invalid SKB: skb=%p, data=%p", skb,
-			skb ? skb->data : NULL);
+		    skb ? skb->data : NULL);
 		return -EINVAL;
 	}
 
 	if (id < 0 || id >= CHAN_ID_MAX) {
 		ERR("send_to_netlink: Invalid channel ID: %d (max: %d)", id,
-			CHAN_ID_MAX);
+		    CHAN_ID_MAX);
 		goto cleanup;
 	}
 
@@ -109,19 +109,19 @@ int send_to_netlink(int id, struct sk_buff *skb, struct nrc_hif_device *hdev,
 
 	reply_skb = genlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
 	if (!reply_skb) {
-		LOG_ERR("Failed to allocate reply SKB");
+		ERR("Failed to allocate reply SKB");
 		goto cleanup;
 	}
 
 	reply_head =
 		genlmsg_put(reply_skb, 0, 0, &nrc_family[id], 0, ATTR_RESPONSE);
 	if (!reply_head) {
-		LOG_ERR("Failed to create message header");
+		ERR("Failed to create message header");
 		goto cleanup;
 	}
 
 	if (nla_put(reply_skb, ATTR_REQUEST, skb->len, skb->data)) {
-		LOG_ERR("Failed to add TLV attribute");
+		ERR("Failed to add TLV attribute");
 		goto cleanup;
 	}
 
@@ -157,17 +157,22 @@ static int process_control_h2f(struct sk_buff *skb, struct genl_info *info)
 	struct wim_tlv *tlv;
 
 	if (!attr) {
-		LOG_ERR("%s: Missing DRIVER_ATTR_TLV attribute", __func__);
+		ERR("Missing DRIVER_ATTR_TLV attribute");
+		return -EINVAL;
+	}
+
+	if (nla_len(attr) < (int)sizeof(struct wim_tlv)) {
+		ERR("TLV attribute too short (%d)", nla_len(attr));
 		return -EINVAL;
 	}
 
 	tlv = nla_data(attr);
 
-	if (nla_len(attr) < sizeof(struct wim_tlv))
+	/* Bound the embedded TLV length against the actual attribute payload */
+	if (tlv->l > nla_len(attr) - (int)sizeof(struct wim_tlv)) {
+		ERR("TLV payload length %u exceeds attribute", tlv->l);
 		return -EINVAL;
-
-	if ((size_t)tlv->l > nla_len(attr) - sizeof(struct wim_tlv))
-		return -EINVAL;
+	}
 
 	/* Process WIM TLVs specific to MCP control channel */
 	ret = nrc_mcp_process_wim_request_wait(CHAN_ID_CONTROL_H2F,
@@ -175,8 +180,7 @@ static int process_control_h2f(struct sk_buff *skb, struct genl_info *info)
 					       WIM_CMD_MCP_CHAN_ID_CONTROL_H2F,
 					       tlv);
 	if (ret) {
-		LOG_ERR("%s: Failed to WIM tlv->type=0x%x err %d\n", __func__,
-			tlv->t, ret);
+		ERR("Failed to WIM tlv->type=0x%x err %d", tlv->t, ret);
 	}
 
 	return ret;
@@ -194,7 +198,12 @@ static int process_data(struct sk_buff *skb, struct genl_info *info)
 	struct nlattr *attr = info->attrs[ATTR_REQUEST];
 
 	if (!attr) {
-		LOG_ERR("%s: Missing DRIVER_ATTR_TLV attribute", __func__);
+		ERR("Missing DRIVER_ATTR_TLV attribute");
+		return -EINVAL;
+	}
+
+	if (nla_len(attr) <= 0) {
+		ERR("Empty data payload");
 		return -EINVAL;
 	}
 
@@ -205,8 +214,7 @@ static int process_data(struct sk_buff *skb, struct genl_info *info)
 				     (u8 *)nla_data(attr), nla_len(attr),
 				     false);
 	if (ret) {
-		LOG_ERR("%s: Failed to transmit protocol frame, err=%d\n",
-			__func__, ret);
+		ERR("Failed to transmit protocol frame, err=%d", ret);
 		return ret;
 	}
 
@@ -225,7 +233,12 @@ static int process_protocol_h2f(struct sk_buff *skb, struct genl_info *info)
 	struct nlattr *attr = info->attrs[ATTR_REQUEST];
 
 	if (!attr) {
-		LOG_ERR("%s: Missing DRIVER_ATTR_TLV attribute", __func__);
+		ERR("Missing DRIVER_ATTR_TLV attribute");
+		return -EINVAL;
+	}
+
+	if (nla_len(attr) <= 0) {
+		ERR("Empty protocol payload");
 		return -EINVAL;
 	}
 
@@ -236,8 +249,7 @@ static int process_protocol_h2f(struct sk_buff *skb, struct genl_info *info)
 				     (u8 *)nla_data(attr), nla_len(attr),
 				     false);
 	if (ret) {
-		LOG_ERR("%s: Failed to transmit protocol frame, err=%d\n",
-			__func__, ret);
+		ERR("Failed to transmit protocol frame, err=%d", ret);
 		return ret;
 	}
 
@@ -263,27 +275,55 @@ static int process_driver_h2d(struct sk_buff *skb, struct genl_info *info)
 	int ret;
 
 	if (!attr) {
-		LOG_ERR("%s: Missing DRIVER_ATTR_TLV attribute", __func__);
+		ERR("Missing DRIVER_ATTR_TLV attribute");
+		return -EINVAL;
+	}
+
+	if (nla_len(attr) < (int)sizeof(struct wim_tlv)) {
+		ERR("TLV attribute too short (%d)", nla_len(attr));
 		return -EINVAL;
 	}
 
 	tlv = nla_data(attr);
 
-	if (nla_len(attr) < sizeof(struct wim_tlv))
+	/* Bound the embedded TLV length against the actual attribute payload */
+	if (tlv->l > nla_len(attr) - (int)sizeof(struct wim_tlv)) {
+		ERR("TLV payload length %u exceeds attribute", tlv->l);
 		return -EINVAL;
-
-	if ((size_t)tlv->l > nla_len(attr) - sizeof(struct wim_tlv))
-		return -EINVAL;
+	}
 
 	if (tlv->t == TLV_TYPE_DRIVER_RAW_PACKET) {
 		/* Raw packet with pre-built HIF header - send directly without modification */
-		driver_raw_packet_t *raw_pkt = (driver_raw_packet_t *)(tlv + 1);
+		driver_raw_packet_t *raw_pkt;
+		int avail = nla_len(attr) - (int)sizeof(struct wim_tlv) -
+			    (int)sizeof(driver_raw_packet_t);
 
-		if ((size_t)tlv->l < sizeof(driver_raw_packet_t) ||
-		    raw_pkt->length < sizeof(struct hif) ||
-		    (size_t)raw_pkt->length > tlv->l -
-			sizeof(driver_raw_packet_t))
+		if (avail < 0) {
+			ERR("raw packet TLV payload too short");
 			return -EINVAL;
+		}
+
+		raw_pkt = (driver_raw_packet_t *)(tlv + 1);
+
+		/*
+		 * Re-bound the embedded length against the original attribute
+		 * size before the transmit path copies raw_pkt->length bytes.
+		 */
+		if (raw_pkt->length < (int)sizeof(struct hif) ||
+		    raw_pkt->length > avail) {
+			ERR("raw packet length %d exceeds attribute (avail %d)",
+			    raw_pkt->length, avail);
+			return -EINVAL;
+		}
+
+		/* The embedded TLV length must also cover the raw packet */
+		if ((size_t)tlv->l < sizeof(driver_raw_packet_t) ||
+		    (size_t)raw_pkt->length >
+			    tlv->l - sizeof(driver_raw_packet_t)) {
+			ERR("raw packet length %d exceeds TLV length %u",
+			    raw_pkt->length, tlv->l);
+			return -EINVAL;
+		}
 
 		LOG_INFO("Raw packet TX: length=%d", raw_pkt->length);
 
@@ -292,32 +332,53 @@ static int process_driver_h2d(struct sk_buff *skb, struct genl_info *info)
 					     raw_pkt->data, raw_pkt->length,
 					     true);
 		if (ret) {
-			LOG_ERR("%s: Failed to transmit protocol frame, err=%d\n",
-				__func__, ret);
+			ERR("Failed to transmit protocol frame, err=%d", ret);
 			return ret;
 		}
-	}
-	if (tlv->t == TLV_TYPE_DRIVER_FIRMWARE) {
-		driver_firmware_t *firmware = (driver_firmware_t *)(tlv + 1);
+	} else if (tlv->t == TLV_TYPE_DRIVER_FIRMWARE) {
+		driver_firmware_t *firmware;
 		char name[DRIVER_CHAR_MAX + 1];
 
-		if ((size_t)tlv->l < sizeof(driver_firmware_t))
+		if (nla_len(attr) < (int)sizeof(struct wim_tlv) +
+					    (int)sizeof(driver_firmware_t)) {
+			ERR("firmware TLV payload too short");
 			return -EINVAL;
-		strscpy(name, firmware->name, sizeof(name));
+		}
+
+		firmware = (driver_firmware_t *)(tlv + 1);
+
+		/*
+		 * The name field is caller-supplied and is not guaranteed to
+		 * be NUL-terminated; terminate a local copy before use.
+		 */
+		memcpy(name, firmware->name, DRIVER_CHAR_MAX);
+		name[DRIVER_CHAR_MAX] = '\0';
 
 		LOG_INFO("MCP: Firmware download request skipped: %s", name);
 
 		/* Trigger network restart which will handle firmware download */
 		// nrc_hal_ops_nw_restart();
 	} else if (tlv->t == TLV_TYPE_DRIVER_SET_LOG) {
-		driver_log_level_t *log = (driver_log_level_t *)(tlv + 1);
+		driver_log_level_t *log;
 		char name[DRIVER_CHAR_MAX + 1];
 		char level[DRIVER_CHAR_MAX + 1];
 
-		if ((size_t)tlv->l < sizeof(driver_log_level_t))
+		if (nla_len(attr) < (int)sizeof(struct wim_tlv) +
+					    (int)sizeof(driver_log_level_t)) {
+			ERR("set_log TLV payload too short");
 			return -EINVAL;
-		strscpy(name, log->name, sizeof(name));
-		strscpy(level, log->level, sizeof(level));
+		}
+
+		log = (driver_log_level_t *)(tlv + 1);
+
+		/*
+		 * Both fields are caller-supplied and are not guaranteed to be
+		 * NUL-terminated; terminate local copies before use.
+		 */
+		memcpy(name, log->name, DRIVER_CHAR_MAX);
+		name[DRIVER_CHAR_MAX] = '\0';
+		memcpy(level, log->level, DRIVER_CHAR_MAX);
+		level[DRIVER_CHAR_MAX] = '\0';
 
 		LOG_INFO("MCP: SET_LOG name=%s level=%s", name, level);
 		nrc_logger_set(name, level);
@@ -329,7 +390,7 @@ static int process_driver_h2d(struct sk_buff *skb, struct genl_info *info)
 		struct wim_tlv *tlv;
 
 		if (!reply_skb) {
-			LOG_ERR("Failed to allocate credit response SKB");
+			ERR("Failed to allocate credit response SKB");
 			return -ENOMEM;
 		}
 
@@ -366,7 +427,7 @@ static int process_driver_h2d(struct sk_buff *skb, struct genl_info *info)
 		struct wim_tlv *reply_tlv;
 
 		if (!reply_skb) {
-			LOG_ERR("Failed to allocate driver ping response SKB");
+			ERR("Failed to allocate driver ping response SKB");
 			return -ENOMEM;
 		}
 
@@ -387,8 +448,7 @@ static int process_driver_h2d(struct sk_buff *skb, struct genl_info *info)
 		send_to_netlink(CHAN_ID_DRIVER_D2H, reply_skb, hdev,
 				HIF_TYPE_ND_WIM, false);
 	} else {
-		LOG_ERR("Unknown: tlv->type=0x%x tlv->length=%d", tlv->t,
-			tlv->l);
+		ERR("Unknown: tlv->type=0x%x tlv->length=%d", tlv->t, tlv->l);
 	}
 
 	return 0;
@@ -582,7 +642,7 @@ int netlink_driver_init(struct nrc_hif_device *hdev)
 	for (id = 0; id < CHAN_ID_MAX; id++) {
 		ret = init_family(id);
 		if (ret) {
-			LOG_ERR("Failed to register family[%d]: %d\n", id, ret);
+			ERR("Failed to register family[%d]: %d", id, ret);
 			goto err;
 		}
 	}
