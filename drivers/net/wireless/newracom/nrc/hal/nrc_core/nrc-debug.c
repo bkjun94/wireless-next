@@ -729,6 +729,7 @@ static const struct file_operations ps_timing_ops = {
 	.release = single_release,
 };
 
+#if defined(DEBUG)
 /* PS Control debugfs */
 static int ps_control_show(struct seq_file *m, void *v)
 {
@@ -915,6 +916,7 @@ static const struct file_operations ps_control_ops = {
 	.llseek = seq_lseek,
 	.release = single_release,
 };
+#endif /* DEBUG */
 
 /* ========================================================================
  * Firmware Control debugfs
@@ -1191,54 +1193,60 @@ void nrc_core_init_debugfs(struct nrc_hif_device *hdev)
 	}
 
 	/* Create common debugfs entries (shared by all frontends) */
-	debugfs_create_file("credit", 0664, nrc_core_debugfs_root, hdev,
+	debugfs_create_file("credit", 0600, nrc_core_debugfs_root, hdev,
 			    &nrc_debugfs_credit_fops);
-	debugfs_create_file("slot", 0664, nrc_core_debugfs_root, hdev,
+	debugfs_create_file("slot", 0600, nrc_core_debugfs_root, hdev,
 			    &nrc_debugfs_slot_fops);
-	debugfs_create_file("debug_mask", 0664, nrc_core_debugfs_root, hdev,
+	debugfs_create_file("debug_mask", 0600, nrc_core_debugfs_root, hdev,
 			    &nrc_debugfs_debug_fops);
-	debugfs_create_file("debug_level", 0664, nrc_core_debugfs_root, hdev,
+	debugfs_create_file("debug_level", 0600, nrc_core_debugfs_root, hdev,
 			    &nrc_debugfs_debug_level_fops);
 
 	/* Create hdev-specific debugfs entries */
-	debugfs_create_file("skb_stats", 0444, nrc_core_debugfs_root, hdev,
+	debugfs_create_file("skb_stats", 0400, nrc_core_debugfs_root, hdev,
 			    &skb_stats_ops);
-	debugfs_create_bool("skb_debug", 0664, nrc_core_debugfs_root,
+	debugfs_create_bool("skb_debug", 0600, nrc_core_debugfs_root,
 			    &hdev->skb_debug_enabled);
 
 	/* Create PS timing debugfs entry */
-	debugfs_create_file("ps_timing", 0444, nrc_core_debugfs_root, hdev,
+	debugfs_create_file("ps_timing", 0400, nrc_core_debugfs_root, hdev,
 			    &ps_timing_ops);
 
-	/* Create PS control debugfs entry */
-	debugfs_create_file("ps_control", 0664, nrc_core_debugfs_root, hdev,
+#if defined(DEBUG)
+	/*
+	 * PS and firmware control let a caller drive device state directly, so
+	 * they are debug/test facilities and are not created in production
+	 * builds.
+	 */
+	debugfs_create_file("ps_control", 0600, nrc_core_debugfs_root, hdev,
 			    &ps_control_ops);
-
-	/* Create FW control debugfs entry */
-	debugfs_create_file("fw_control", 0664, nrc_core_debugfs_root, hdev,
+	debugfs_create_file("fw_control", 0600, nrc_core_debugfs_root, hdev,
 			    &fw_control_ops);
+#endif /* DEBUG */
 
 #ifdef CONFIG_SUPPORT_RECOVERY
 	/* Create recovery status debugfs entry */
-	debugfs_create_file("recovery", 0664, nrc_core_debugfs_root, hdev,
+	debugfs_create_file("recovery", 0600, nrc_core_debugfs_root, hdev,
 			    &recovery_status_ops);
 #endif
 
-	/* Create loopback test directory and entries */
+#if defined(DEBUG)
+	/* Loopback is a test facility: not created in production builds */
 	loopback_debugfs_root =
 		debugfs_create_dir("loopback", nrc_core_debugfs_root);
 	if (loopback_debugfs_root) {
-		debugfs_create_file("test", 0664, loopback_debugfs_root, hdev,
+		debugfs_create_file("test", 0600, loopback_debugfs_root, hdev,
 				    &nrc_debugfs_lb_test_fops);
-		debugfs_create_file("count", 0664, loopback_debugfs_root, hdev,
+		debugfs_create_file("count", 0600, loopback_debugfs_root, hdev,
 				    &nrc_debugfs_lb_count_fops);
-		debugfs_create_file("sample", 0664, loopback_debugfs_root, hdev,
+		debugfs_create_file("sample", 0600, loopback_debugfs_root, hdev,
 				    &lb_sample_ops);
-		debugfs_create_file("report", 0664, loopback_debugfs_root, hdev,
+		debugfs_create_file("report", 0600, loopback_debugfs_root, hdev,
 				    &lb_report_ops);
-		debugfs_create_file("hexdump", 0664, loopback_debugfs_root,
+		debugfs_create_file("hexdump", 0600, loopback_debugfs_root,
 				    hdev, &nrc_debugfs_lb_hexdump_fops);
 	}
+#endif /* DEBUG */
 
 	INFO("Core debugfs initialized at /sys/kernel/debug/nrc_core/");
 #endif

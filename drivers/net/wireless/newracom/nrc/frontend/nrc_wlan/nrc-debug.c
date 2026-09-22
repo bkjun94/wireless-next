@@ -540,7 +540,7 @@ static struct dentry *apf_debugfs_root;
 void nrc_init_debugfs(struct nrc *nw)
 {
 #define nrc_debugfs_create_file(name, fops) \
-	debugfs_create_file(name, 0664, nw->debugfs, nw, fops)
+	debugfs_create_file(name, 0600, nw->debugfs, nw, fops)
 
 	nw->debugfs = nw->hw->wiphy->debugfsdir;
 
@@ -552,22 +552,31 @@ void nrc_init_debugfs(struct nrc *nw)
 	nrc_debugfs_create_file("debug_mask", &nrc_wlan_debugfs_debug_fops);
 	nrc_debugfs_create_file("debug_level", &nrc_wlan_debugfs_level_fops);
 
+#if defined(DEBUG)
+	/*
+	 * Device manipulation controls: debug/test only, so they are not
+	 * created in production builds. Diagnostic and read-only entries
+	 * below stay available for field support.
+	 */
+
 	/* Network restart (WLAN initiated) */
 	nrc_debugfs_create_file("restart", &nrc_debugfs_restart_device_fops);
 
-	/* WLAN-specific debugfs entries */
 	nrc_debugfs_create_file("wakeup", &nrc_debugfs_wakeup_device);
 	nrc_debugfs_create_file("sleep", &nrc_debugfs_sleep_device);
+#endif /* DEBUG */
+
+	/* WLAN-specific debugfs entries */
 	nrc_debugfs_create_file("snr", &nrc_debugfs_snr);
 	nrc_debugfs_create_file("rssi", &nrc_debugfs_rssi);
 	nrc_debugfs_create_file("beacon_updated", &nrc_debugfs_beacon_updated);
 	nrc_debugfs_create_file("expected_tput", &nrc_debugfs_expected_tput);
-	debugfs_create_file("info", 0444, nw->debugfs, nw,
+	debugfs_create_file("info", 0400, nw->debugfs, nw,
 			    &nrc_debugfs_wlan_info_fops);
 
 #if defined(CONFIG_SUPPORT_BD)
 	/* BD channel map: S1G channel index -> NonS1G proxy freq, with active channel marker */
-	debugfs_create_file("channel_map", 0444, nw->debugfs, nw,
+	debugfs_create_file("channel_map", 0400, nw->debugfs, nw,
 			    &nrc_debugfs_channel_map_fops);
 #endif
 

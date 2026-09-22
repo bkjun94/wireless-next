@@ -103,9 +103,9 @@ void nrc_init_debugfs(struct mcp_priv *mcp)
 	}
 
 	/* MCP module-specific debug mask and level */
-	debugfs_create_file("debug_mask", 0664, mcp_debugfs_root, mcp,
+	debugfs_create_file("debug_mask", 0600, mcp_debugfs_root, mcp,
 			    &nrc_mcp_debugfs_debug_fops);
-	debugfs_create_file("debug_level", 0664, mcp_debugfs_root, mcp,
+	debugfs_create_file("debug_level", 0600, mcp_debugfs_root, mcp,
 			    &nrc_mcp_debugfs_level_fops);
 
 	/* MCP-specific debugfs entries would be created here if needed */
