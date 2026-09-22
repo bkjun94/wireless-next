@@ -146,6 +146,9 @@ struct nrc_spi_priv {
 #if defined(CONFIG_SPI_USE_DT)
 	struct gpio_desc *reset_gpio;
 #endif
+	/* Legacy HW reset GPIO from spi_reset_gpio module param, used only when
+	 * DT reset-gpios is absent. -1 when unused (DT path or soft-reset). */
+	int reset_gpio_num;
 	/* Set while polling the target for readiness after a reset. Read
 	 * failures (invalid ACK / SYS read fail) are expected during that
 	 * window, so they are not logged to avoid flooding the console. */

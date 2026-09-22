@@ -27,6 +27,7 @@
 extern int spi_bus_num;
 extern int spi_cs_num;
 extern int spi_gpio_irq;
+extern int spi_reset_gpio;
 extern int spi_polling_interval;
 extern int spi_gdma_irq;
 extern bool enable_hspi_init;
