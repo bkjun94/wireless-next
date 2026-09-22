@@ -106,7 +106,12 @@ typedef struct _vendor_cmd_info {
 /* not convert bss_max_idle value using usf */
 bool no_convert_usf = false;
 
-char nrc_cc[2];
+/*
+ * Current alpha-2 country code. Sized for the trailing NUL so that it can be
+ * passed to %s: KASAN caught a global-out-of-bounds read when this was two
+ * bytes and nrc_set_s1g_country() printed it as a string.
+ */
+char nrc_cc[3];
 
 #define CHAN2G(freq)                             \
 	{                                        \
@@ -391,9 +396,13 @@ static void force_sw_enc_mode_by_sta_type(struct nrc *nw,
 		}
 		break;
 	default:
+		/*
+		 * Unknown chipset: keep the configured sw_enc default rather
+		 * than taking the kernel down over a chip id we cannot map.
+		 */
 		ERR("Unknown Newracom IEEE80211 chipset %04x",
 		    nw->hdev->chip_id);
-		BUG();
+		break;
 	}
 }
 
@@ -1342,7 +1351,7 @@ static int nrc_mac_add_interface(struct ieee80211_hw *hw,
 			} else {
 				ERR("Invalid Chip ID(0x%x), queues:%d",
 				    nw->hdev->chip_id, nw->hdev->hw_queues);
-				BUG();
+				goto err_free_vif;
 			}
 		}
 	} else
@@ -1373,12 +1382,12 @@ static int nrc_mac_add_interface(struct ieee80211_hw *hw,
 		default:
 			ERR("Invalid Chip ID(0x%x), queues:%d",
 			    nw->hdev->chip_id, nw->hdev->hw_queues);
-			BUG();
+			goto err_free_vif;
 		}
 	}
 	if (i_vif->index > 1) {
 		ERR("Invalid Vif Index(%d)", i_vif->index);
-		BUG();
+		goto err_free_vif;
 	}
 	DBG_MAC("%s: VIF%d's hwqueue:%d", __func__, i_vif->index,
 		nw->hdev->hw_queues);
@@ -1455,6 +1464,13 @@ out:
 	}
 
 	return 0;
+
+#ifdef CONFIG_SUPPORT_AFTER_KERNEL_3_0_36
+err_free_vif:
+	/* Release the index claimed by nrc_alloc_vif_index() above */
+	nrc_free_vif_index(nw, vif);
+	return -EINVAL;
+#endif
 }
 
 static int nrc_mac_change_interface(struct ieee80211_hw *hw,
@@ -3174,7 +3190,11 @@ int nrc_mac_conf_tx(struct ieee80211_hw *hw, u16 ac,
 #endif
 
 #ifdef CONFIG_SUPPORT_AFTER_KERNEL_3_0_36
-	BUG_ON(ac < IEEE80211_AC_VO || ac > IEEE80211_AC_BK);
+	/* Bounds the mac80211_to_nrc_aci_map[] lookup below */
+	if (ac < IEEE80211_AC_VO || ac > IEEE80211_AC_BK) {
+		ERR("Invalid access category %u", ac);
+		return -EINVAL;
+	}
 	ac = mac80211_to_nrc_aci_map[ac];
 #endif
 
@@ -3410,7 +3430,13 @@ static char *scan_status_str[] = {
 
 static char *nrc_mac_scan_status_str(enum NRC_SCAN_MODE status)
 {
-	BUG_ON(status >= NRC_SCAN_MODE_MAX);
+	/*
+	 * Bounds scan_status_str[]. This only feeds debug logs, so an
+	 * unexpected value must not be fatal. The enum is unsigned, so the
+	 * upper bound is the only check needed.
+	 */
+	if (status >= NRC_SCAN_MODE_MAX)
+		return "UNKNOWN";
 
 	return scan_status_str[status];
 }
@@ -5175,6 +5201,7 @@ static void nrc_reg_notifier(struct wiphy *wiphy,
 		 request->alpha2[1], request->initiator);
 	nrc_cc[0] = request->alpha2[0];
 	nrc_cc[1] = request->alpha2[1];
+	nrc_cc[2] = '\0';
 	if ((request->alpha2[0] == '0' && request->alpha2[1] == '0') ||
 	    (request->alpha2[0] == '9' && request->alpha2[1] == '9')) {
 		INFO_MAC(

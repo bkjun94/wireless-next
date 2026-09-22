@@ -593,7 +593,11 @@ int nrc_xmit_injected_frame(struct ieee80211_vif *vif,
 	int credit;
 	struct nrc_hif_device *hdev = nrc_hal_core_get_hdev();
 
-	BUG_ON(hdev == NULL);
+	if (!hdev) {
+		ERR_HIF("HIF device not available, dropping injected frame");
+		dev_kfree_skb_any(skb);
+		return -ENODEV;
+	}
 
 	extra_len =
 		nrc_skb_append_tx_info(hdev, (!!sta ? sta->aid : 0), skb, true);
@@ -662,8 +666,11 @@ int nrc_xmit_wlan_frame(s8 vif_index, u16 aid, struct sk_buff *skb)
 #endif
 	struct nrc_hif_device *hdev = nrc_hal_core_get_hdev();
 
-	BUG_ON(hdev == NULL);
-	BUG_ON(hdev->nw == NULL);
+	if (!hdev) {
+		ERR_HIF("HIF device not available, dropping frame");
+		dev_kfree_skb_any(skb);
+		return -ENODEV;
+	}
 
 	if (!hdev->nw) {
 		nrc_hif_free_skb(hdev, skb);

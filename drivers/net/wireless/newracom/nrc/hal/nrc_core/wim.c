@@ -725,10 +725,15 @@ int nrc_wim_request(struct sk_buff *skb, u16 cmd, int timeout,
 		cmd = wim->cmd;
 	}
 
+	/* Bounds cmd before it is used to index the command name table below */
+	if (cmd >= WIM_CMD_MAX) {
+		ERR_WIM("invalid WIM command %d", cmd);
+		ret = -EINVAL;
+		goto free_skb;
+	}
+
 	DBG_WIM("%d(%s) request timeout %d ms %s", cmd, nrc_wim_cmd_str(cmd),
 		timeout, use_mcp_path ? "MCP" : "WLAN");
-
-	BUG_ON(cmd >= WIM_CMD_MAX);
 
 	if (!hdev->wim_resp) {
 		ERR_WIM("wim response is null");
