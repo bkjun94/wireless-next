@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 
+# Unique symbol prefix for this layer's debug state (see common/nrc-debug-common.h)
+ccflags-y += -DNRC_DBG_PREFIX=nrc_wlan_
 
 obj-$(CONFIG_NRC7394) += nrc_wlan.o
 
